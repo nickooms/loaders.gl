@@ -21,14 +21,23 @@
 import {TEST_CASES} from './test-cases';
 import {RenderTest} from '@deck.gl/test-utils';
 
-const testRendering = new RenderTest({
-  testCases: TEST_CASES,
-  width: 800,
-  height: 450,
-  // Max color delta in the YIQ difference metric for two pixels to be considered the same
-  colorDeltaThreshold: 255 * 0.05,
-  // Percentage of pixels that must be the same for the test to pass
-  testPassThreshold: 0.98
-});
+// TODO - @deck.gl/test-utils should handle async cases
+function resolveTestCases(testCases) {
+  return Promise.all(testCases.map(testCase => {
+    return (testCase instanceof Promise) ? testCase : Promise.resolve(testCase);
+  }));
+}
 
-testRendering.run();
+resolveTestCases(TEST_CASES).then(testCases => {
+  const testRendering = new RenderTest({
+    testCases,
+    width: 800,
+    height: 450,
+    // Max color delta in the YIQ difference metric for two pixels to be considered the same
+    colorDeltaThreshold: 255 * 0.05,
+    // Percentage of pixels that must be the same for the test to pass
+    testPassThreshold: 0.98
+  });
+
+  testRendering.run();
+});

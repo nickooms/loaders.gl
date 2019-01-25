@@ -1,7 +1,11 @@
 import {OrbitView, COORDINATE_SYSTEM} from '@deck.gl/core';
 import {DracoEncoder, DracoLoader} from '@loaders.gl/draco';
+import {LASLoader} from '@loaders.gl/las';
 
 import {PointCloudLayer} from '@deck.gl/layers';
+
+// LAZ
+const LAS_BINARY = require('test-data/las/indoor.laz');
 
 // Raw point cloud data
 const KITTI_POSITIONS = require('test-data/raw-attribute-buffers/lidar-positions.bin');
@@ -10,18 +14,6 @@ const kittiPointCloudRaw = {
   POSITION: new Float32Array(KITTI_POSITIONS),
   COLOR: new Uint8ClampedArray(KITTI_COLORS)
 };
-
-// Encode/decode mesh with Draco
-const dracoEncoder = new DracoEncoder({
-  quantization: {
-    POSITION: 14
-  }
-});
-const compressedMesh = dracoEncoder.encodePointCloud(kittiPointCloudRaw);
-dracoEncoder.destroy();
-// eslint-disable-next-line
-console.log(compressedMesh.byteLength);
-const kittiPointCloudFromDraco = DracoLoader.parseBinary(compressedMesh).attributes;
 
 const viewProps = {
   views: [new OrbitView({
@@ -49,6 +41,31 @@ const layerProps = {
 };
 
 export default [
+  LASLoader.parseBinary(LAS_BINARY, {skip: 100}).then(lazPointCloud => ({
+    name: 'laz-pointcloud-test',
+    renderingTimes: 1,
+    ...viewProps,
+    viewState: {
+      lookAt: [
+        (lazPointCloud.header.mins[0] + lazPointCloud.header.maxs[0]) / 2,
+        (lazPointCloud.header.mins[1] + lazPointCloud.header.maxs[1]) / 2,
+        (lazPointCloud.header.mins[2] + lazPointCloud.header.maxs[2]) / 2
+      ],
+      distance: 50,
+      zoom: 1.5
+    },
+    layers: [
+      new PointCloudLayer({
+        id: 'laz-pointcloud-test',
+        ...layerProps,
+        radiusPixels: 20,
+        numInstances: lazPointCloud.header.vertexCount,
+        instancePositions: lazPointCloud.attributes.POSITION,
+        instanceColors: lazPointCloud.attributes.COLOR_0
+      })
+    ],
+    referenceImageUrl: './test/render/golden-images/laz-indoor.png'
+  })),
   {
     name: 'kitti-pointcloud-test',
     renderingTimes: 1,
@@ -64,7 +81,7 @@ export default [
     ],
     referenceImageUrl: './test/render/golden-images/kitti-point-cloud.png'
   },
-  {
+  encodeAndDecodeDraco(kittiPointCloudRaw).then(data => ({
     name: 'draco-pointcloud-test',
     renderingTimes: 1,
     ...viewProps,
@@ -72,11 +89,24 @@ export default [
       new PointCloudLayer({
         id: 'draco-pointcloud-test',
         ...layerProps,
-        numInstances: kittiPointCloudFromDraco.POSITION.length / 3,
-        instancePositions: kittiPointCloudFromDraco.POSITION,
-        instanceColors: new Uint8ClampedArray(kittiPointCloudFromDraco.COLOR_0)
+        numInstances: data.header.vertexCount,
+        instancePositions: data.attributes.POSITION,
+        instanceColors: new Uint8ClampedArray(data.attributes.COLOR_0)
       })
     ],
     referenceImageUrl: './test/render/golden-images/kitti-point-cloud.png'
-  }
+  }))
 ];
+
+function encodeAndDecodeDraco(attributes) {
+  // Encode/decode mesh with Draco
+  const dracoEncoder = new DracoEncoder({
+    quantization: {
+      POSITION: 14
+    }
+  });
+  const compressedMesh = dracoEncoder.encodePointCloud(attributes);
+  dracoEncoder.destroy();
+  // console.log(compressedMesh.byteLength); // eslint-disable-line
+  return Promise.resolve(DracoLoader.parseBinary(compressedMesh));
+}
